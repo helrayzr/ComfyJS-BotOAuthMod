@@ -75,6 +75,7 @@ async function pubsubConnect( channel, password ) {
 
 	password = password.replace( "oauth:", "" );
 
+/*
 	let validation = await fetch( "https://id.twitch.tv/oauth2/validate", {
 		headers: {
 			"Authorization": `OAuth ${password}`
@@ -85,15 +86,18 @@ async function pubsubConnect( channel, password ) {
 		console.error( "Invalid Password or Permission Scopes (channel:read:redemptions, user:read:email)" );
 		return;
 	}
+*/
 
 	let userInfo = await fetch( "https://api.twitch.tv/helix/users?login=" + channel, {
 		headers: {
-			"Client-ID": validation.client_id,
+			"Client-ID": process.env.TWITCHCLIENTID.replace( "oauth:", "" ),
 			"Authorization": `Bearer ${password}`
 		}
 	}).then( r => r.json() );
+	
+//console.log(userInfo);
+	
 	let channelId = userInfo.data[ 0 ].id;
-
 	let ws;
 	if( typeof window !== "undefined" ) {
 		ws = new WebSocket( "wss://pubsub-edge.twitch.tv" );
@@ -216,6 +220,7 @@ var mainChannel = "";
 var channelPassword = "";
 var channelInfo = null;
 var client = null;
+var botclient = null;
 var isFirstConnect = true;
 var reconnectCount = 0;
 var comfyJS = {
@@ -320,6 +325,36 @@ var comfyJS = {
   onConnected: function( address, port, isFirstConnect ) {
   },
   onReconnect: function( reconnectCount ) {
+  },
+  BotSay: function( message, channel ) {
+    if( botclient ) {
+      if( !channel ) {
+        channel = mainChannel;
+      }
+      botclient.say( channel, message )
+      .catch( comfyJS.onError );
+      return true;
+    }
+    return false;
+  },
+  BotWhisper: function( message, user ) {
+    if( botclient ) {
+      botclient.whisper( user, message )
+      .catch( comfyJS.onError );
+      return true;
+    }
+    return false;
+  },
+  BotAnnounce: function( message, channel, color = null ) {
+    if( botclient ) {
+      if( !channel ) {
+        channel = mainChannel;
+      }
+      botclient.say( channel, `/announce ${message}` )
+      .catch( comfyJS.onError );
+      return true;
+    }
+    return false;
   },
   Say: function( message, channel ) {
     if( client ) {
@@ -477,7 +512,7 @@ var comfyJS = {
         comfyJS.onError( error );
       }
     });
-    client.on( 'messagedeleted', function( channel, username, deletedMessage, userstate ) {
+	client.on( 'messagedeleted', function( channel, username, deletedMessage, userstate ) {
       try {
         var messageId = userstate[ "target-msg-id" ];
         var roomId = userstate[ "room-id" ];
@@ -698,8 +733,62 @@ var comfyJS = {
 		pubsubConnect( mainChannel, password );
 	}
   },
+  BotInit: function( username, password, channels, isDebug ) {
+    channels = channels || [ username ];
+    if( typeof channels === 'string' || channels instanceof String ) {
+      channels = [ channels ];
+    }
+    if( !Array.isArray( channels ) ) {
+      throw new Error( "Channels is not an array" );
+    }
+    comfyJS.isDebug = isDebug;
+    mainChannel = channels[ 0 ];
+    var options = {
+      options: {
+        debug: isDebug,
+        skipUpdatingEmotesets: true
+      },
+      connection: {
+        reconnect: true,
+        secure: true
+      },
+      channels: channels
+    };
+    if( password ) {
+      options.identity = {
+        username: username,
+        password: password
+      };
+      channelPassword = password;
+    }
+
+    botclient = new tmi.client( options );
+/*
+    botclient.on( 'roomstate', function( channel, state ) {
+      try {
+        var channelName = channel.replace( "#", "" );
+        comfyJS.chatModes[ channelName ] = comfyJS.chatModes[ channelName ] || {};
+        if( "emote-only" in state ) { comfyJS.chatModes[ channelName ].emoteOnly = state[ "emote-only" ]; }
+        if( "followers-only" in state ) { comfyJS.chatModes[ channelName ].followerOnly = ( state[ "followers-only" ] >= 0 ); }
+        if( "subs-only" in state ) { comfyJS.chatModes[ channelName ].subOnly = state[ "subs-only" ]; }
+        if( "r9k" in state ) { comfyJS.chatModes[ channelName ].r9kMode = state[ "r9k" ]; }
+        if( "slow" in state ) { comfyJS.chatModes[ channelName ].slowMode = state[ "slow" ]; }
+        comfyJS.onChatMode( comfyJS.chatModes[ channelName ], channelName );
+      }
+      catch( error ) {
+        comfyJS.onError( error );
+      }
+    });
+*/
+    botclient.connect()
+    .catch( comfyJS.onError );
+  },
   Disconnect: function() {
     client.disconnect()
+    .catch( comfyJS.onError );
+  },
+  BotDisconnect: function() {
+    botclient.disconnect()
     .catch( comfyJS.onError );
   },
   GetChannelRewards: async function( clientId, manageableOnly = false ) {
