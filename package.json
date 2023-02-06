@@ -1,5 +1,5 @@
 {
-  "name": "comfy.js",
+  "name": "@helrayzr/comfyjs-botoauthmod",
   "version": "1.1.16",
   "description": "Twitch-Integrated Bot Module for Coding Cafe",
   "main": "app.js",
